@@ -1,0 +1,80 @@
+@page "/"
+@inject HttpClient Http
+
+<PageTitle>Consulta CEP - BrasilAPI</PageTitle>
+<h1>Consulta CEP - BrasilAPI</h1>
+<p>Digite um CEP para consultar o endereço na BrasilAPI.</p>
+<div class="search">
+    <input type="text" inputmode="numeric" maxlength="9" placeholder="CEP (8 dígitos)" @bind="cepDigitado" @bind:event="oninput" aria-label="CEP" />
+    <button @onclick="ConsultarCep" disabled="@consultando">@(consultando ? "Consultando..." : "Consultar")</button>
+</div>
+@if (!string.IsNullOrEmpty(erro))
+{
+    <p class="erro" role="alert">@erro</p>
+}
+@if (endereco is not null)
+{
+    <section class="resultado">
+        <h2>Endereço encontrado</h2>
+        <table>
+            <tbody>
+                <tr><th>CEP</th><td>@Exibir(endereco.Codigo)</td></tr>
+                <tr><th>Logradouro</th><td>@Exibir(endereco.Logradouro)</td></tr>
+                <tr><th>Bairro</th><td>@Exibir(endereco.Bairro)</td></tr>
+                <tr><th>Cidade</th><td>@Exibir(endereco.Cidade)</td></tr>
+                <tr><th>Estado</th><td>@Exibir(endereco.Estado)</td></tr>
+                <tr><th>Serviço</th><td>@Exibir(endereco.Servico)</td></tr>
+                <tr><th>IBGE (cidade)</th><td>@Exibir(endereco.Ibge?.Cidade)</td></tr>
+                <tr><th>IBGE (estado)</th><td>@Exibir(endereco.Ibge?.Estado)</td></tr>
+            </tbody>
+        </table>
+        <p class="nota">A versão v1 da BrasilAPI pode não fornecer dados IBGE. Quando ausentes, são exibidos como “Não informado pela API”.</p>
+    </section>
+}
+
+@code {
+    private string cepDigitado = string.Empty;
+    private Cep? endereco;
+    private string? erro;
+    private bool consultando;
+
+    private static string Exibir(string? valor) => string.IsNullOrWhiteSpace(valor) ? "Não informado pela API" : valor;
+
+    private async Task ConsultarCep()
+    {
+        erro = null;
+        endereco = null;
+        var cep = new string(cepDigitado.Where(char.IsDigit).ToArray());
+        if (cep.Length != 8 || cepDigitado.Any(c => !char.IsDigit(c) && c != '-'))
+        {
+            erro = "Digite um CEP válido com 8 números.";
+            return;
+        }
+
+        consultando = true;
+        try
+        {
+            using var resposta = await Http.GetAsync($"https://brasilapi.com.br/api/cep/v1/{cep}");
+            if (!resposta.IsSuccessStatusCode)
+            {
+                erro = resposta.StatusCode == System.Net.HttpStatusCode.NotFound
+                    ? "CEP não encontrado." : "Não foi possível consultar esse CEP. Tente novamente.";
+                return;
+            }
+            endereco = await resposta.Content.ReadFromJsonAsync<Cep>();
+            if (endereco is null) erro = "A API não retornou dados do endereço.";
+        }
+        catch (HttpRequestException)
+        {
+            erro = "Erro de conexão com a BrasilAPI.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            erro = "Não foi possível interpretar a resposta da API.";
+        }
+        finally
+        {
+            consultando = false;
+        }
+    }
+}
